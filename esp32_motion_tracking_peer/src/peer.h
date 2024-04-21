@@ -15,7 +15,7 @@
 // Header file with SSID and passsword for WiFi Connection
 #include "secrets.h"
 
-const bool DEBUG_MODE = true;
+const bool DEBUG_MODE = false;
 
 #define SERIAL_BEGIN Serial.begin
 #define SERIAL_PRINTLN Serial.println

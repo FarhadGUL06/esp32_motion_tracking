@@ -21,7 +21,7 @@
  * else the program will run in production mode
  */
 
-const bool DEBUG_MODE = true;
+const bool DEBUG_MODE = false;
 
 int32_t wifi_channel;
 const char *WIFI_SSID = DEBUG_MODE == true ? HIDDEN_SSID1 : HIDDEN_SSID2;
