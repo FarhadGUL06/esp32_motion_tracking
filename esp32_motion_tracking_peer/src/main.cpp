@@ -217,8 +217,13 @@ void get_multiple_frames()
 		memset(payload_combined, 0,
 			   size_of_entry * seconds_to_SD * frames_per_second);
 	}
+	// Close file
 	file.close();
+
+	// Reset timer
+	timerAlarmDisable(timer_frame);
 	frame_on_timer = 0;
+
 	SERIAL_PRINTLN("Program stopped!");
 	SERIAL_PRINTLN("[ESP32] Free memory: " + String(esp_get_free_heap_size()) +
 				   " bytes");
@@ -253,7 +258,8 @@ void on_data_recv(const uint8_t *mac, const uint8_t *incomingData, int len)
 			// Print header
 			file.println(header);
 		}
-		// loop_blocker = 1;
+		// Enable timer
+		timerAlarmEnable(timer_frame);
 		break;
 	case 1:
 		// Start data collect
@@ -393,7 +399,6 @@ void initialise_timer()
 	timer_frame = timerBegin(0, 80, true);
 	timerAttachInterrupt(timer_frame, &on_timer, true);
 	timerAlarmWrite(timer_frame, one_second / frames_per_second, true);
-	timerAlarmEnable(timer_frame);
 }
 
 void initialise_memory()
