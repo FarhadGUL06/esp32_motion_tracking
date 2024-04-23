@@ -11,6 +11,7 @@
 #include <esp_now.h>
 #include <esp_wifi.h>
 #include <time.h>
+#include <esp_task_wdt.h>
 
 // Header file with SSID and passsword for WiFi Connection
 #include "secrets.h"
@@ -62,6 +63,7 @@ volatile int frame_delay_index = 0;
 long index_of_frame = 0;
 
 File file;
+File to_send;
 
 hw_timer_t *timer_frame = NULL;
 
