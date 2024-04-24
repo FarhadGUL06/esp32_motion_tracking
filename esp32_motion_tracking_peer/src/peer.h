@@ -28,8 +28,6 @@ const uint8_t number_sensors = 12;
 const int size_of_entry = 128;
 const int one_second = 1000000;
 const int frames_per_second = 100;
-// const int framePerSecondBias = 0;
-// const int frame_delay = 1000 / frames_per_second;
 const int seconds_to_SD = 10;
 
 // https://lastminuteengineers.com/esp32-sleep-modes-power-consumption/
