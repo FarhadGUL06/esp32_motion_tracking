@@ -46,23 +46,16 @@ void enable_server_mode()
 			file_name = request->getParam(FILE_INPUT)->value();
 			file_name = "/" + file_name;
 			// request->send(200, "text/plain", "Download file set!");
-			if (to_send) {
-				SERIAL_PRINTLN("Closing file");
-				to_send.close();
-			}
 
-			to_send = SD.open(file_name.c_str(), FILE_READ);
-			if (!to_send) {
-				SERIAL_PRINTLN("File doesn't exist!");
-				request->send(200, "text/plain", "File doesn't exist!");
-				return;
-			}
 			SERIAL_PRINTLN("File exists!");
 		} else {
 			request->send(200, "text/plain", "No file specified!");
 			return;
 		}
-
+		if (to_send) {
+			SERIAL_PRINTLN("Closing file");
+			to_send.close();
+		}
 		File to_send = SD.open(file_name.c_str(), FILE_READ);
 		if (!to_send) {
 			SERIAL_PRINTLN("File doesn't exist!");
@@ -73,7 +66,7 @@ void enable_server_mode()
 		AsyncWebServerResponse *response = request->beginResponse(
 			"text/plain", to_send.size(),
 			[to_send](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
-				maxLen = 1024;
+				maxLen = 512;
 				File SDLambdaFile = to_send;
 
 				int bytes = SDLambdaFile.read(buffer, maxLen);

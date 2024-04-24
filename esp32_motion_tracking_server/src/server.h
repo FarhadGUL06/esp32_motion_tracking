@@ -38,7 +38,7 @@ const uint8_t CURRENT_ID = 0; // ID Server
 const uint8_t number_sensors = 12;
 
 int start_point = DEBUG_MODE == true ? 0 : 1;
-int end_point = DEBUG_MODE == true ? 1 : number_sensors;
+int end_point = DEBUG_MODE == true ? 2 : number_sensors;
 
 const int asyncport = 80;
 const char *PARAM_INPUT_VBAT = "sensor";
