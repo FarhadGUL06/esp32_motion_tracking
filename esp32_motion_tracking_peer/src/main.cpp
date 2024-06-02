@@ -45,16 +45,6 @@ void enable_server_mode()
 		if (request->hasParam(FILE_INPUT)) {
 			file_name = request->getParam(FILE_INPUT)->value();
 			file_name = "/" + file_name;
-			// request->send(200, "text/plain", "Download file set!");
-
-			SERIAL_PRINTLN("File exists!");
-		} else {
-			request->send(200, "text/plain", "No file specified!");
-			return;
-		}
-		if (to_send) {
-			SERIAL_PRINTLN("Closing file");
-			to_send.close();
 		}
 		File to_send = SD.open(file_name.c_str(), FILE_READ);
 		if (!to_send) {
@@ -63,14 +53,13 @@ void enable_server_mode()
 			return;
 		}
 
-		AsyncWebServerResponse *response = request->beginResponse(
-			"text/plain", to_send.size(),
+		SERIAL_PRINTLN("File exists!");
+		AsyncWebServerResponse *response = request->beginChunkedResponse(
+			"text/plain",
 			[to_send](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
-				maxLen = 512;
+				maxLen = maxLen >> 1;
 				File SDLambdaFile = to_send;
-
-				int bytes = SDLambdaFile.read(buffer, maxLen);
-				return max(0, bytes);
+				return SDLambdaFile.read(buffer, maxLen);
 			});
 		request->send(response);
 	});
@@ -87,7 +76,6 @@ void enable_server_mode()
 		});
 	SERIAL_PRINTLN("[ESP32] Free memory: " + String(esp_get_free_heap_size()) +
 				   " bytes");
-
 	server.begin();
 }
 
@@ -103,8 +91,14 @@ void enable_espnow()
 
 	// Register server as peer
 	memcpy(peer_info.peer_addr, server_mac, 6);
+
+	// if (CURRENT_ID == 3 || CURRENT_ID == 10 || CURRENT_ID == 11) {
+	// 	// If it's the first ESP32, then it's the server
+	// 	peer_info.channel = 2;
+	// } else {
+	// If it's not the first ESP32, then it's a client
 	peer_info.channel = 0;
-	peer_info.encrypt = false;
+	// }
 
 	// Add peer
 	if (esp_now_add_peer(&peer_info) != ESP_OK) {
@@ -199,36 +193,47 @@ void read_battery_level()
 	SERIAL_PRINTLN(voltage);
 }
 
+int cv = 0, cv2 = 0;
+
 void get_multiple_frames()
 {
 	SERIAL_PRINTLN("Getting multiple frames");
 	frame_on_timer = 1;
 	int i;
-	while (collecting_state == 1) {
-		for (i = 0; i < seconds_to_SD * frames_per_second; i++) {
-			frame_delay_index = 0;
-			timerWrite(timer_frame, 0);
+	// while (collecting_state == 1) {
+	for (i = 0; i < seconds_to_SD * frames_per_second; i++) {
+		frame_delay_index = 0;
+		timerWrite(timer_frame, 0);
 
-			get_entry_info(index_of_frame);
-			index_of_frame++;
-			strcat(payload_combined, payload_entry);
+		get_entry_info(index_of_frame);
+		index_of_frame++;
+		strcat(payload_combined, payload_entry);
 
-			if (collecting_state == 0) {
-				// Exit if received stop command
-				break;
-			}
-			if (i == seconds_to_SD * frames_per_second - 1) {
-				// Skip waiting if it's the last iteration
-				break;
-			}
-			while (frame_delay_index == 0) {
-				// Wait for timer to trigger
-			}
+		if (collecting_state == 0) {
+			// Exit if received stop command
+			// cv2 = micros();
+			break;
 		}
-		file.print(payload_combined);
-		memset(payload_combined, 0,
-			   size_of_entry * seconds_to_SD * frames_per_second);
+		if (i == seconds_to_SD * frames_per_second - 1) {
+			// Skip waiting if it's the last iteration
+			break;
+		}
+		while (frame_delay_index == 0) {
+			// Wait for timer to trigger
+		}
+		//}
+
+		/* Print to SD Card in chunks of 512 bytes
+		char to_print[512];
+		memset(to_print, 0, 512);
+		for (i = 0; i < strlen(payload_combined); i += 511) {
+			strncpy(to_print, payload_combined + i, 511);
+			file.print(to_print);
+		}*/
 	}
+	file.print(payload_combined);
+	memset(payload_combined, 0,
+		   size_of_entry * seconds_to_SD * frames_per_second);
 	// Close file
 	file.close();
 
@@ -239,6 +244,9 @@ void get_multiple_frames()
 	SERIAL_PRINTLN("Program stopped!");
 	SERIAL_PRINTLN("[ESP32] Free memory: " + String(esp_get_free_heap_size()) +
 				   " bytes");
+	// send_message(7, "");
+	// Serial.print("Time taken: ");
+	// Serial.println(cv2 - cv);
 }
 
 // callback function that will be executed when data is received
@@ -258,27 +266,16 @@ void on_data_recv(const uint8_t *mac, const uint8_t *incomingData, int len)
 	struct timeval custom_time;
 	switch (message_recv.command) {
 	case 0:
-		// Init - open file
-		file_name = message_recv.text;
-		file_name = "/" + file_name;
-		file = SD.open(file_name.c_str(), FILE_WRITE);
-
-		if (!file) {
-			// If the file didn't open, print an error:
-			SERIAL_PRINTLN("Error opening file!");
-		} else {
-			// Print header
-			file.println(header);
-		}
-		// Enable timer
-		timerAlarmEnable(timer_frame);
+		// Init data collect
+		init_blocker = 1;
 		break;
 	case 1:
 		// Start data collect
-		loop_blocker = 1;
+		start_blocker = 1;
 		break;
 	case 2:
 		// Stop
+		// cv = micros();
 		collecting_state = 0;
 		break;
 	case 3:
@@ -490,7 +487,6 @@ void setup()
 
 {
 	SERIAL_BEGIN(9600);
-
 	SERIAL_PRINTLN("Turning on!");
 	pixel.begin();
 
@@ -509,10 +505,43 @@ void setup()
 				   " bytes");
 }
 
+void init_block()
+{
+	// Init - open file
+	SERIAL_PRINTLN("Init block");
+	file_name = message_recv.text;
+	file_name = "/" + file_name;
+
+	int time_to_open_start = millis();
+	file = SD.open(file_name.c_str(), FILE_WRITE);
+	int time_to_open_end = millis();
+
+	SERIAL_PRINT("Time to open file: ");
+	SERIAL_PRINTLN(time_to_open_end - time_to_open_start);
+
+	int time_to_write_start = millis();
+	if (!file) {
+		// If the file didn't open, print an error:
+		SERIAL_PRINTLN("Error opening file!");
+	} else {
+		// Print header
+		file.println(header);
+	}
+	int time_to_write_end = millis();
+	SERIAL_PRINT("Time to write to file: ");
+	SERIAL_PRINTLN(time_to_write_end - time_to_write_start);
+	// Enable timer
+	timerAlarmEnable(timer_frame);
+}
+
 void loop()
 {
-	if (loop_blocker == 1) {
-		loop_blocker = 0;
+	if (init_blocker == 1) {
+		init_blocker = 0;
+		init_block();
+	}
+	if (start_blocker == 1) {
+		start_blocker = 0;
 		start_trial();
 	}
 }

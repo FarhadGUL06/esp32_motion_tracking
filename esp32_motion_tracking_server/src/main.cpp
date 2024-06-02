@@ -1,5 +1,7 @@
 #include "server.h"
 
+std::vector<int> sensor_ids = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+
 // For NEOPIXEL
 Adafruit_NeoPixel pixel(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 
@@ -43,7 +45,7 @@ void send_message(int id, uint8_t command, String text)
 		break;
 	default:
 		// Send message to specific device (id)
-		if (esp_now_send(mac[id], (uint8_t *)&message, sizeof(message)) !=
+		if (esp_now_send(all_macs[id], (uint8_t *)&message, sizeof(message)) !=
 			ESP_OK) {
 			SERIAL_PRINTLN("Error sending message");
 		}
@@ -81,21 +83,44 @@ int32_t get_WiFi_channel(const char *ssid)
 	return 0;
 }
 
+int decide_send_id(const uint8_t *current_mac)
+{
+	int i, j, ok;
+	int current_id = -1;
+	// Verify which ESP32 is this (CURRENT_ID)
+	for (i = 0; i < number_sensors; i++) {
+		ok = 1;
+
+		for (j = 0; j < 6; j++) {
+			if (current_mac[j] != all_macs[i][j]) {
+				ok = 0;
+				break;
+			}
+		}
+
+		if (ok == 1) {
+			current_id = i;
+			break;
+		}
+	}
+	return current_id;
+}
+
+
 // callback function that will be executed when data is received
 void on_data_recv(const uint8_t *mac, const uint8_t *incomingData, int len)
 {
 	memset(&message, 0, sizeof(message));
 	memcpy(&message, incomingData, sizeof(message));
-	SERIAL_PRINT("Bytes received: ");
-	SERIAL_PRINTLN(len);
-	SERIAL_PRINT("Received from: ");
-	SERIAL_PRINTLN(mac[5], HEX);
+	int sensor_id = decide_send_id(mac);
+	SERIAL_PRINTLN("Received from: ESP32_" + String(sensor_id));
 	SERIAL_PRINT("ID: ");
 	SERIAL_PRINTLN(message.id);
 	SERIAL_PRINT("Command: ");
 	SERIAL_PRINTLN(message.command);
 	SERIAL_PRINT("Text: ");
 	SERIAL_PRINTLN(message.text);
+	SERIAL_PRINTLN("");
 
 	switch (message.command) {
 	case 3:
@@ -124,6 +149,10 @@ void on_data_recv(const uint8_t *mac, const uint8_t *incomingData, int len)
 		strcpy(file_exists[message.id], message.text);
 		break;
 
+	case 7:
+		// finished stop
+		sensors_ready[message.id] = 1;
+		break;
 	default:
 		break;
 	}
@@ -132,7 +161,14 @@ void on_data_recv(const uint8_t *mac, const uint8_t *incomingData, int len)
 // callback when data is sent
 void on_data_sent(const uint8_t *mac_addr, esp_now_send_status_t status)
 {
-	SERIAL_PRINT("\r\nLast Packet Send Status:\t");
+	SERIAL_PRINT("\r\nSend to ");
+	int sensor_id = decide_send_id(mac_addr);
+	if (sensor_id == -1) {
+		SERIAL_PRINTLN("Unknown->\t\t");
+		return;
+	}
+	SERIAL_PRINT("ESP32_" + String(sensor_id) + " \t\t");
+	
 	SERIAL_PRINTLN(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success"
 												  : "Delivery Fail");
 }
@@ -140,6 +176,9 @@ void on_data_sent(const uint8_t *mac_addr, esp_now_send_status_t status)
 void initialise_stuff()
 {
 	SERIAL_BEGIN(9600);
+
+	for (int i = 0; i < number_sensors; ++i)
+		sensors_ready[i] = 1;
 
 	SERIAL_PRINTLN("Turning on!");
 	pixel.begin();
@@ -179,8 +218,10 @@ void initialise_stuff()
 
 	// Register all peers
 	for (int i = start_point; i < end_point; i++) {
-		memcpy(peer_info.peer_addr, mac[i], 6);
+		memcpy(peer_info.peer_addr, all_macs[i], 6);
 		peer_info.channel = 0;
+
+		// peer_info.channel = 0;
 		peer_info.encrypt = false;
 
 		// Add peer
@@ -234,15 +275,42 @@ void setup()
 	// <ESP_IP>/init?file=<file_name>
 	server.on("/init", HTTP_GET, [](AsyncWebServerRequest *request) {
 		SERIAL_PRINTLN("Program initialised!");
+
 		if (init_state == 1) {
 			request->send(200, "text/plain", "Program already initialised!");
 			return;
 		}
+
+		String f = "";
+		for (int i : sensor_ids)
+			f += "ESP32_" + String(i) + ": " + String(sensors_ready[i] + '0') +
+				 "\n";
+
+		int cnt = sensor_ids.size();
+		for (int i : sensor_ids)
+			if (sensors_ready[i] == 1)
+				cnt--;
+
+		if (cnt != 0) {
+			request->send(200, "text/plain",
+						  (f + String("Not all sensors are ready!")).c_str());
+			return;
+		} else {
+			for (int i : sensor_ids)
+				sensors_ready[i] = 1;
+		}
+
 		if (request->hasParam(FILE_INPUT)) {
 			init_state = 1;
 			file_name = request->getParam(FILE_INPUT)->value();
-			send_message(-1, 0, file_name);
-			request->send(200, "text/plain", "Program initialised!");
+			// send_message(-1, 0, file_name);
+			for (int i : sensor_ids)
+				send_message(i, 0, file_name);
+
+			f = f + String("Program initialised!");
+			request->send(200, "text/plain", f.c_str());
+			Serial.println(f);
+			return;
 		}
 		request->send(200, "text/plain", "No file name provided!");
 	});
@@ -258,7 +326,13 @@ void setup()
 			return;
 		}
 		start_state = 1;
-		send_message(-1, 1, "");
+
+		// instead of send_message(-1, 1, "");
+		for (int i : sensor_ids) {
+			send_message(i, 1, "");
+			delay(100);
+		}
+
 		request->send(200, "text/plain", "Program started!");
 	});
 
@@ -278,14 +352,17 @@ void setup()
 		start_state = 0;
 		init_state = 0;
 
-		send_message(-1, 2, "");
+		// instead of send_message(-1, 2, "");
+		for (int i : sensor_ids)
+			send_message(i, 2, "");
+
 		request->send(200, "text/plain", "Program stopped!");
 	});
 
 	// <ESP_IP>/all_bat
 	server.on("/all_bat", HTTP_GET, [](AsyncWebServerRequest *request) {
 		battery_level_str = "";
-		for (int i = start_point; i < end_point; i++) {
+		for (int i : sensor_ids) {
 			send_message(i, 3, "");
 			battery_level_str +=
 				"ESP32_" + String(i) + ": " + battery_level[i] + "\n";
@@ -296,7 +373,7 @@ void setup()
 
 	// <ESP_IP>/sync
 	server.on("/sync", HTTP_GET, [](AsyncWebServerRequest *request) {
-		for (int i = start_point; i < end_point; i++) {
+		for (int i : sensor_ids) {
 			timestamp = get_current_time();
 			send_message(i, 4, String(timestamp));
 		}
@@ -306,7 +383,7 @@ void setup()
 	// <ESP_IP>/all_timestamp
 	server.on("/all_timestamp", HTTP_GET, [](AsyncWebServerRequest *request) {
 		timestamp_str = "";
-		for (int i = start_point; i < end_point; i++) {
+		for (int i : sensor_ids) {
 			send_message(i, 5, "");
 			timestamp_str += "ESP32_" + String(i) + ": " + timestamps[i] + "\n";
 		}
@@ -331,7 +408,10 @@ void setup()
 
 	// <ESP_IP>/enable_download
 	server.on("/enable_download", HTTP_GET, [](AsyncWebServerRequest *request) {
-		send_message(-1, 7, "");
+		// instead of send_message(-1, 7, "");
+		for (int i = start_point; i < end_point; i++)
+			send_message(i, 7, "");
+
 		request->send(200, "text/plain", "Download enabled!");
 	});
 

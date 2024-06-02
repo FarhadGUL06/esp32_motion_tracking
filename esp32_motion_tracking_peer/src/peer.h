@@ -11,12 +11,11 @@
 #include <esp_now.h>
 #include <esp_wifi.h>
 #include <time.h>
-#include <esp_task_wdt.h>
 
 // Header file with SSID and passsword for WiFi Connection
 #include "secrets.h"
 
-const bool DEBUG_MODE = false;
+const bool DEBUG_MODE = true;
 
 #define SERIAL_BEGIN Serial.begin
 #define SERIAL_PRINTLN Serial.println
@@ -25,10 +24,12 @@ const bool DEBUG_MODE = false;
 uint8_t CURRENT_ID = -1; // ID ESP32_ID - auto
 const uint8_t number_sensors = 12;
 
-const int size_of_entry = 128;
+const int size_of_entry = 80;
 const int one_second = 1000000;
-const int frames_per_second = 100;
-const int seconds_to_SD = 10;
+const int frames_per_second = 60;
+// const int framePerSecondBias = 0;
+// const int frame_delay = 1000 / frames_per_second;
+const int seconds_to_SD = 35;
 
 // https://lastminuteengineers.com/esp32-sleep-modes-power-consumption/
 
@@ -54,14 +55,14 @@ RTC_NOINIT_ATTR state program_state = COLLECTING_STATE;
 	program_state == 1 => download mode
 */
 volatile int collecting_state = 0;
-volatile int loop_blocker = 0;
+volatile int start_blocker = 0;
+volatile int init_blocker = 0;
 volatile int frame_on_timer = 0;
 volatile int frame_delay_index = 0;
 
 long index_of_frame = 0;
 
 File file;
-File to_send;
 
 hw_timer_t *timer_frame = NULL;
 
@@ -96,7 +97,7 @@ uint8_t all_macs[][6] = {
 	{0x60, 0x55, 0xF9, 0x7E, 0xA7, 0xE4},
 	// 60:55:F9:7E:A8:28 - ESP32_5
 	{0x60, 0x55, 0xF9, 0x7E, 0xA8, 0x28},
-	// 60:55:F9:7C:AE:B4 - ESP32_6
+	// 60:55:F9:7C:AE:6C - ESP32_6
 	{0x60, 0x55, 0xF9, 0x7C, 0xAE, 0x6C},
 	// 60:55:F9:7C:AE:F0 - ESP32_7
 	{0x60, 0x55, 0xF9, 0x7C, 0xAE, 0xF0},
@@ -139,5 +140,7 @@ void initialise_stuff();
 void start_trial();
 void enable_server_mode();
 void enable_espnow();
+void init_block();
+void start_trial();
 
 #endif
