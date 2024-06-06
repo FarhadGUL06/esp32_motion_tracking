@@ -21,7 +21,7 @@
  * else the program will run in production mode
  */
 
-const bool DEBUG_MODE = true;
+const bool DEBUG_MODE = false;
 
 int32_t wifi_channel;
 const char *WIFI_SSID = DEBUG_MODE == true ? HIDDEN_SSID1 : HIDDEN_SSID2;
@@ -37,8 +37,8 @@ const char *time_zone = "EET-2EEST,M3.5.0/3,M10.5.0/4";
 const uint8_t CURRENT_ID = 0; // ID Server
 const uint8_t number_sensors = 12;
 
-int start_point = 1;//DEBUG_MODE == true ? 0 : 1;
-int end_point = 12;//DEBUG_MODE == true ? 2 : number_sensors;
+int start_point = DEBUG_MODE == true ? 0 : 1;
+int end_point = DEBUG_MODE == true ? 2 : number_sensors;
 
 const int asyncport = 80;
 const char *PARAM_INPUT_VBAT = "sensor";

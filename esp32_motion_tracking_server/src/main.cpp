@@ -325,6 +325,8 @@ void setup()
 			request->send(200, "text/plain", "Program already started!");
 			return;
 		}
+		SERIAL_PRINTLN("Program started!");
+		
 		start_state = 1;
 
 		// instead of send_message(-1, 1, "");
@@ -348,6 +350,8 @@ void setup()
 			request->send(200, "text/plain", "Program not started!");
 			return;
 		}
+		SERIAL_PRINTLN("Program stopped!");
+		
 
 		start_state = 0;
 		init_state = 0;
